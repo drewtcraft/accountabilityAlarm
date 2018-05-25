@@ -25,10 +25,10 @@ export default class App extends React.Component {
   }
 
   componentDidMount() {
-      ws = new WebSocket('ws://173.2.3.175:3001');
+      ws = new WebSocket('ws://accountability-alarm.herokuapp.com/:3001');
       ws.onopen = () => {
         console.log('cnxn est')
-
+ 
         if(this.state.user !== 'no_user' || this.state.user !== null ){
           console.log('user:', this.state.user)
           this.sendMessage(this.state.user)

@@ -1,28 +1,28 @@
+var WebSocketServer = require("ws").Server
+var http = require("http")
+var express = require("express")
+var app = express()
+var port = process.env.PORT || 5000
 
-const WebSocket = require('ws');
+app.use(express.static(__dirname + "/"))
 
+var server = http.createServer(app)
+server.listen(port)
 
-const wss = new WebSocket.Server({ port: 3001 });
+console.log("http server listening on %d", port)
 
-let clients = []
+var wss = new WebSocketServer({server: server})
+console.log("websocket server created")
 
-wss.on('connection', function connection(ws, req) {
-  console.log((req.connection.remoteAddress))
+wss.on("connection", function(ws) {
+  var id = setInterval(function() {
+    ws.send(JSON.stringify(new Date()), function() {  })
+  }, 1000)
 
-  ws.on('message', function incoming(message) {
-    console.log(JSON.parse(message)['message'])
+  console.log("websocket connection open")
 
-    //check what sort of data is coming in and do something accordingly
-
-    switch(JSON.parse(message)['message']){
-      case 'no_user':
-        let user_id = req.connection.remoteAddress + `${Math.floor(Math.random()*1000)}`
-        ws.send(JSON.stringify({message: {newUser: user_id}}))
-    }
-
-
-
-
-  });
-
-});
+  ws.on("close", function() {
+    console.log("websocket connection close")
+    clearInterval(id)
+  })
+})
