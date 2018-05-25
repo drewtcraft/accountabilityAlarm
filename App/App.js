@@ -25,10 +25,10 @@ export default class App extends React.Component {
   }
 
   componentDidMount() {
-      ws = new WebSocket('ws://accountability-alarm.herokuapp.com/:3001');
+      ws = new WebSocket('ws://accountability-alarm.herokuapp.com/:5000');
       ws.onopen = () => {
         console.log('cnxn est')
- 
+
         if(this.state.user !== 'no_user' || this.state.user !== null ){
           console.log('user:', this.state.user)
           this.sendMessage(this.state.user)
@@ -41,15 +41,9 @@ export default class App extends React.Component {
 
 
         ws.onmessage = (message) => {
-          let parsedMessage = JSON.parse(message.data)['message']
-
-          if(parsedMessage['newUser']){
-            console.log('new user id is', parsedMessage['newUser'])
-            this.saveUser(parsedMessage['newUser'])
-          } else {
-            console.log('should not fire')
-          }
-        }
+          console.log(message.data)
+        //
+      }
 
     }
 
