@@ -13,6 +13,7 @@ export default class App extends React.Component {
     this.sendMessage = this.sendMessage.bind(this)
     this.getUser = this.getUser.bind(this)
     this.saveUser = this.saveUser.bind(this)
+    this.websocketFunk = this.websocketFunk.bind(this)
   }
 
   componentWillMount(){
@@ -21,10 +22,14 @@ export default class App extends React.Component {
         user: data
       })
     })
-
   }
 
   componentDidMount() {
+      this.websocketFunk()
+
+    }
+
+    websocketFunk(){
       ws = new WebSocket('ws://accountability-alarm.herokuapp.com/:5000');
       ws.onopen = () => {
         console.log('cnxn est')
@@ -44,7 +49,6 @@ export default class App extends React.Component {
           console.log(message.data)
         //
       }
-
     }
 
     async getUser(){
@@ -83,7 +87,7 @@ export default class App extends React.Component {
   render() {
     return (
       <View style={styles.container}>
-        <Button title='shit' onPress={()=>{this.sendInfo()
+        <Button title='shit' onPress={()=>{this.websocketFunk()
           console.log('shjti')
         }} />
         <Text >Open up App.js to start working on your app!</Text>
