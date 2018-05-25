@@ -15,9 +15,8 @@ var wss = new WebSocketServer({server: server})
 console.log("websocket server created")
 
 wss.on("connection", function(ws) {
-  var id = setInterval(function() {
-    ws.send(JSON.stringify(new Date()), function() {  })
-  }, 1000)
+
+  ws.send('you got it bitch')
 
   console.log("websocket connection open")
 

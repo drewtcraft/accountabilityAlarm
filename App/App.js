@@ -25,6 +25,26 @@ export default class App extends React.Component {
   }
 
   componentDidMount() {
+
+    ws = new WebSocket('ws://accountability-alarm.herokuapp.com/:5000');
+    ws.onopen = () => {
+      console.log('cnxn est')
+
+      if(this.state.user !== 'no_user' || this.state.user !== null ){
+        console.log('user:', this.state.user)
+        this.sendMessage(this.state.user)
+      } else {
+        console.log('no user detected, generating new id')
+        this.sendMessage('no_user')
+      }
+
+    }
+
+
+      ws.onmessage = (message) => {
+        console.log(message.data)
+      //
+    }
       this.websocketFunk()
 
     }
