@@ -54,7 +54,7 @@ export default class App extends React.Component {
       ws.onopen = () => {
         console.log('cnxn est')
 
-        if(this.state.user !== 'no_user' || this.state.user !== null ){
+        if(this.state.user !== 'no_user'){
           console.log('user:', this.state.user)
           this.sendMessage(this.state.user)
         } else {
