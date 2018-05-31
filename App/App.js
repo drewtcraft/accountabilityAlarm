@@ -1,39 +1,30 @@
 import React from 'react';
-import { StyleSheet, Text, View, Button, AsyncStorage, DatePickerIOS} from 'react-native';
-const helper = require('./helper.js')
+import { Alert, ScrollView, StyleSheet, Text, View, Button, AsyncStorage, DatePickerIOS, TouchableWithoutFeedback} from 'react-native';
+import { createBottomTabNavigator } from 'react-navigation';
 
 
 
-export default class App extends React.Component {
+class GameState extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { chosenDate: new Date() };
+    this.state = {
+      chosenDate: new Date(),
+      connection: false,
 
-    this.setDate = this.setDate.bind(this);
+     };
+
     this.sendMessage = this.sendMessage.bind(this)
     this.getUser = this.getUser.bind(this)
     this.saveUser = this.saveUser.bind(this)
-    this.setAlarm = this.setAlarm.bind(this)
+    this.sendGameState2 = this.sendGameState2.bind(this)
+    this.sendGameState1 = this.sendGameState1.bind(this)
+    this.connect = this.connect.bind(this)
+    this.saveAlarm = this.saveAlarm.bind(this)
+    this.getAlarms = this.getAlarms.bind(this)
   }
 
-  setAlarm(){
-    console.log('button working')
-    this.sendMessage('setAlarm', this.state.chosenDate)
-  }
 
-  setDate(newDate) {
-    //parse new date from nasty weird object
-    const year = JSON.stringify(newDate).slice(1, 5)
-    const month = `${parseInt(JSON.stringify(newDate).slice(6, 8))-1}`
-    const day = JSON.stringify(newDate).slice(9, 11)
-    const hourPlusFive = JSON.stringify(newDate).slice(12, 14)
-    const hour = `${parseInt(hourPlusFive)-4}`
-    const minute = JSON.stringify(newDate).slice(15, 17)
 
-    const stringDate = `${year} ${month} ${day} ${hour} ${minute}`
-    const setDate = new Date(year, month, day, hour, minute, 0)
-    this.setState({chosenDate: setDate})
- }
 
   componentWillMount(){
     this.getUser().then((data)=> {
@@ -43,30 +34,163 @@ export default class App extends React.Component {
     })
   }
 
-  componentDidMount() {
-
+  connect(){
     //ws = new WebSocket('ws://accountability-alarm.herokuapp.com/:5000');
-    ws = new WebSocket('ws://192.168.1.138:5001')
-
+    ws = new WebSocket('ws://173.2.3.175:5001')
     ws.onopen = () => {
       console.log('cnxn est')
+      this.setState({
+        connection: true
+      })
 
       //if there is no user (found in cWM), send 'no_user'
-      if(this.state.user !== 'no_user' || this.state.user !== null ){
+      if(this.state.user !== 'no_user'){
         console.log('user:', this.state.user)
         this.sendMessage('user', this.state.user)
       } else {
         console.log('no user detected, generating new id')
         this.sendMessage('user', 'no_user')
       }
-
     }
 
-    ws.onmessage = (message) => {
-      console.log('current message', message.data)
+    ws.onmessage = (data) => {
+      const messageType = Object.keys(JSON.parse(data.data))[0]
+      const message = JSON.parse(data.data)[messageType]
+      console.log('type:', messageType,':', message)
+      switch(messageType){
+        case 'new_id':
+          this.saveUser(message)
+          this.getUser()
+          break;
+        case 'gameState2':
+          this.setState({
+            gameState: message
+          })
+          break;
+        case 'gameState1':
+        console.log(message)
+          this.setState({
+            gameState: message
+          })
+          console.log('state:', this.state)
+          break;
+        case 'gameOver':
+          console.log('little fuck face')
+          this.setState({
+            gameState: undefined
+          })
+          Alert.alert('you did it!')
+
+          break;
+        case 'alarmConfirm':
+          console.log('alarm save confirmed')
+          this.saveAlarm(message)
+          Alert.alert('alarm set!')
+        break;
+        case 'alreadySet':
+          console.log('alarm exists')
+          Alert.alert('alarm already exists')
+        break;
+
+        default:
+          break;
+      }
+    }
+    ws.onclose = ()=>{
+      ws['closed'] = true
+      this.setState({
+        connection: false
+      })
+
     }
   }
 
+  componentDidMount() {
+
+    this.connect()
+
+
+  }
+
+
+  async sendGameState1(num){
+    console.log('gamestate1 firing', this.state)
+    await this.setState((prevState)=>{
+      console.log('entering setState')
+    let prevGameState = prevState.gameState[Object.keys(prevState.gameState)[0]]
+    console.log('prevgamestate established')
+    console.log(prevGameState.state)
+
+    prevGameState['state'].push(num)
+    console.log(prevGameState.state)
+
+    console.log('num pushed')
+    let obj = {}
+    obj[Object.keys(prevState.gameState)[0]] = prevGameState
+    console.log('new state set up')
+    return {gameState: obj}
+
+    })
+    this.sendMessage('gameState1', this.state.gameState)
+
+  }
+
+  async sendGameState2(num){
+
+    console.log('gamestate2 firing', this.state)
+    await this.setState((prevState)=>{
+      console.log('entering setState')
+    let prevGameState = prevState.gameState[Object.keys(prevState.gameState)[0]]
+    console.log('prevgamestate established')
+    console.log(prevGameState.state)
+
+    prevGameState['state'].push(num)
+    console.log(prevGameState.state)
+
+    console.log('num pushed')
+
+    prevGameState['turn'] = this.state.user === prevGameState['users'][0]
+      ? prevGameState['users'][0] : prevGameState['users'][1]
+
+    let obj = {}
+    obj[Object.keys(prevState.gameState)[0]] = prevGameState
+    console.log('new state set up')
+    return {gameState: obj}
+
+    })
+    this.sendMessage('gameState2', this.state.gameState)
+  }
+
+  async saveAlarm(alarmObj){
+    console.log('alarmObj', alarmObj)
+    let alarms = await this.getAlarms()
+    if(alarms === undefined){
+      alarms = {}
+      alarms[alarmObj['date']] = alarmObj['id']
+    } else {
+      alarms[alarmObj['date']] = alarmObj['id']
+    }
+    console.log('alarms:::', alarms)
+
+    try {
+      await AsyncStorage.setItem('@MyStore:alarms', JSON.stringify(alarms));
+      console.log('suxess')
+    } catch (error) {
+      console.log(alarmObj, 'not saved', error)
+    }
+  }
+
+  async getAlarms(){
+    try {
+      const value = await AsyncStorage.getItem('@MyStore:alarms');
+      if (value !== null){
+        return JSON.parse(value)
+      }
+    } catch (error) {
+      console.log(error)
+      return {}
+    }
+  }
 
   async getUser(){
     try {
@@ -78,6 +202,8 @@ export default class App extends React.Component {
       return 'no_user'
     } catch (error) {
       console.log(error)
+      return 'no_user'
+
     }
   }
 
@@ -93,33 +219,260 @@ export default class App extends React.Component {
   sendMessage(type, payload){
     let obj = {}
     obj[type] = payload
-    ws.send(JSON.stringify({message: obj}))
+    ws.send(JSON.stringify(obj))
   }
 
 
 
   render() {
+
+    let connection = (<View><Text>not connected</Text>
+                      <Button title='reconnect' onPress={()=>{this.connect()}} /></View>)
+    if(this.state.connection){
+      connection = (<Text>connected</Text>)
+    }
+
+    let tileFunc = ()=>{}
+    let tiles = (<Text>No Active Games</Text>)
+
+    if(this.state.gameState !== undefined){
+      console.log('gametype', Object.keys(this.state.gameState)[0])
+      tileFunc = this.state.gameState[Object.keys(this.state.gameState)[0]]['type'] === 'single'
+        ? this.sendGameState1 : this.sendGameState2
+      this.state.gameState[Object.keys(this.state.gameState)[0]]['state']
+
+      tiles = []
+
+      let hit = this.state.gameState[Object.keys(this.state.gameState)[0]]['state']
+      let solutionHit = this.state.gameState[Object.keys(this.state.gameState)[0]]['solution']
+
+      for(let i = 0; i < 25; i++){
+        //if tile has been clicked
+        if(hit.indexOf(i) !== -1 && solutionHit.indexOf(i) !== -1){
+          tiles.push(<TouchableWithoutFeedback key={i} onPress={()=>{
+            console.log('tile hit')
+            }}>
+          <View style={styles.solutionHitTile}></View>
+          </TouchableWithoutFeedback>)
+        } else if (hit.indexOf(i) !== -1){
+          tiles.push(<TouchableWithoutFeedback key={i} onPress={()=>{
+            console.log('tile hit')
+            }}>
+          <View style={styles.hitTile}></View>
+          </TouchableWithoutFeedback>)
+        }
+
+        else {
+        tiles.push(<TouchableWithoutFeedback key={i} onPress={()=>{
+          console.log('tile hit', this.state)
+          tileFunc(i)}}>
+        <View style={styles.tile}></View>
+        </TouchableWithoutFeedback>)
+      }
+    }
+
+  }
+
+
+
+    let gameBoard = (<View></View>)
+
+
+
+
+
+
+    gameBoard =  (<View style={styles.tileContainer}>
+      {tiles}
+
+    </View>
+  )
     return (
       <View style={styles.container}>
-        <Button title='set alarm' onPress={()=>{
-          this.setAlarm()
-        }} />
 
-        <DatePickerIOS
-          date={this.state.chosenDate}
-          onDateChange={this.setDate}
-        />
+        {gameBoard}
+        {connection}
+        <Button title='throwaway button' onPress={()=>{}} />
+
 
       </View>
     );
   }
 }
 
+
+
+class SetAlarm extends React.Component {
+  constructor(props){
+    super(props)
+
+    this.state = {
+      chosenDate: new Date()
+    }
+
+    this.setAlarm = this.setAlarm.bind(this)
+    this.setDate = this.setDate.bind(this)
+  }
+
+  setAlarm(){
+    if(!ws['closed'])
+      { ws.send(JSON.stringify({'setAlarm': this.state.chosenDate}))}
+      else{Alert.alert('connection lost')}
+      }
+
+  setDate(newDate) {
+    this.setState({chosenDate: newDate})
+
+ }
+
+
+
+  render(){
+    return(
+
+      <View style={styles.datePicker}>
+      <DatePickerIOS
+        date={this.state.chosenDate}
+        onDateChange={this.setDate}
+      />
+      <Button title='set alarm' onPress={
+        this.setAlarm
+      } />
+      </View>
+    )
+  }
+}
+
+
+class MyAlarm extends React.Component {
+  constructor(props){
+    super(props)
+
+    this.state = {
+      alarms: []
+    }
+    this.deleteAlarm = this.deleteAlarm.bind(this)
+  }
+
+
+  componentWillMount(){
+    this.getAlarms()
+  }
+
+  async getAlarms(){
+    try {
+      const value = await AsyncStorage.getItem('@MyStore:alarms');
+      if (value !== null){
+        this.setState({alarms: JSON.parse(value)})
+      }
+    } catch (error) {
+      console.log(error)
+
+    }
+  }
+
+  async deleteAlarm(alarm){
+    console.log('delete firing')
+    ws.send(JSON.stringify({'fuck': 'shit'}))
+    ws.send({'deleteAlarm': this.state.alarms[alarm]})
+    console.log('ws working')
+    this.setState((prevState)=>{
+      delete prevState.alarms[alarm]
+      return {alarms: prevState.alarms}
+    })
+    console.log('just before async shit')
+    try {
+      console.log('firing');
+      await AsyncStorage.setItem('@MyStore:alarms', JSON.stringify(this.state.alarms));
+      console.log('suxess')
+    } catch (error) {
+      console.log( error)
+    }
+
+  }
+
+  render(){
+    let alarms = Object.keys(this.state.alarms).map((alarm, i)=>{
+      return (
+        <View style={styles.alarm} key={i}>
+          <Text >{alarm}</Text>
+          <Button title='remove alarm' onPress={()=>{
+            this.deleteAlarm(alarm)
+
+          }} />
+        </View>)
+    })
+
+    return(
+
+      <ScrollView contentContainerStyle={styles.myAlarms}>
+        {alarms}
+      </ScrollView>
+    )
+  }
+}
+
+
+
+
+export default createBottomTabNavigator({
+  Home: GameState,
+  SetAlarm: SetAlarm,
+  MyAlarm: MyAlarm
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    alignItems: 'stretch',
-    justifyContent: 'center',
+    alignSelf: 'center',
+    flexDirection: 'column',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
+  tile: {
+    backgroundColor: '#000',
+    width: '19%',
+    height: '19%',
+    borderColor: 'white',
+    borderWidth:2
+  },
+  tileContainer: {
+    flex: 0,
+    height: '50%',
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  datePicker : {
+    flex: 1,
+    width: '100%',
+    justifyContent:'center'
+  },
+  myAlarms: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  alarm: {
+    borderColor: 'red',
+    borderWidth: 1
+  },
+  hitTile: {
+    backgroundColor: '#BBB',
+    width: '19%',
+    height: '19%',
+    borderColor: 'white',
+    borderWidth:2
+  },
+  solutionHitTile: {
+    backgroundColor: '#444',
+    width: '19%',
+    height: '19%',
+    borderColor: 'white',
+    borderWidth:2
+  }
 });
