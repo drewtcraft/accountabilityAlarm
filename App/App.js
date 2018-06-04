@@ -3,19 +3,26 @@ import { Alert, ScrollView, StyleSheet, Text, View, Button, AsyncStorage, DatePi
 import { createBottomTabNavigator } from 'react-navigation';
 
 
-class ConnectionStatus extends React.Component {
-  constructor(props){
-    super(props)
-    this.state={
-      connection: false
-    }
-    this.connect = this.connect.bind(this)
+
+
+
+
+class GameState extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      connection: false,
+      chosenDate: new Date(),
+      turn: undefined
+     };
     this.sendMessage = this.sendMessage.bind(this)
+    this.sendGameState2 = this.sendGameState2.bind(this)
+    this.sendGameState1 = this.sendGameState1.bind(this)
+    this.getAlarms = this.getAlarms.bind(this)
     this.getUser = this.getUser.bind(this)
+    this.connect = this.connect.bind(this)
     this.saveUser = this.saveUser.bind(this)
     this.saveAlarm = this.saveAlarm.bind(this)
-
-
   }
 
   componentWillMount(){
@@ -26,13 +33,9 @@ class ConnectionStatus extends React.Component {
     })
   }
 
-
-    componentDidMount() {
-
-      this.connect()
-
-
-    }
+  componentDidMount(){
+    this.connect()
+  }
 
   connect(){
     //ws = new WebSocket('ws://accountability-alarm.herokuapp.com/:5000');
@@ -54,9 +57,12 @@ class ConnectionStatus extends React.Component {
     }
 
     ws.onmessage = (data) => {
+
       const messageType = Object.keys(JSON.parse(data.data))[0]
       const message = JSON.parse(data.data)[messageType]
+
       console.log('type:', messageType,':', message)
+
       switch(messageType){
         case 'new_id':
           this.saveUser(message)
@@ -72,29 +78,23 @@ class ConnectionStatus extends React.Component {
         console.log(message)
           this.setState({
             gameState: message
-
           })
           console.log('state:', this.state)
           break;
         case 'gameOver':
-          console.log('little fuck face')
           this.setState({
             gameState: undefined,
             turn: undefined
           })
           Alert.alert('you did it!')
-
           break;
         case 'alarmConfirm':
-          console.log('alarm save confirmed')
           this.saveAlarm(message)
           Alert.alert('alarm set!')
-        break;
+          break;
         case 'alreadySet':
-          console.log('alarm exists')
           Alert.alert('alarm already exists')
-        break;
-
+          break;
         default:
           break;
       }
@@ -109,117 +109,44 @@ class ConnectionStatus extends React.Component {
     }
   }
 
-
-    async getUser(){
-      try {
-        const value = await AsyncStorage.getItem('@MyStore:user');
-        if (value !== null){
-          console.log('value', value)
-          return value
-        }
-        return 'no_user'
-      } catch (error) {
-        console.log(error)
-        return 'no_user'
-
-      }
+  async saveUser(user_id){
+    try {
+      await AsyncStorage.setItem('@MyStore:user', user_id);
+    } catch (error) {
+      console.log(user_id, 'not saved', error)
     }
-
-    async saveUser(user_id){
-      try {
-        await AsyncStorage.setItem('@MyStore:user', user_id);
-        console.log('suxess')
-      } catch (error) {
-        console.log(user_id, 'not saved', error)
-      }
-    }
-
-    sendMessage(type, payload){
-      let obj = {}
-      obj[type] = payload
-      ws.send(JSON.stringify(obj))
-    }
-
-    async saveAlarm(alarmObj){
-      console.log('alarmObj', alarmObj)
-      let alarms = await this.getAlarms()
-      if(alarms === undefined){
-        alarms = {}
-        alarms[alarmObj['date']] = alarmObj['id']
-      } else {
-        alarms[alarmObj['date']] = alarmObj['id']
-      }
-
-      try {
-        await AsyncStorage.setItem('@MyStore:alarms', JSON.stringify(alarms));
-        console.log('suxess')
-      } catch (error) {
-        console.log(alarmObj, 'not saved', error)
-      }
-    }
-
-    render(){
-      let connectionStatus = (<Text></Text>)
-      if(this.state.connection === false){
-        connectionStatus = (
-          <View>
-            <Text>disconnected from server <Button title='reconnect' onPress={()=>{
-              this.connect()
-            }} /></Text>
-          </View>)
-      }
-      return(<View>
-          {connectionStatus}
-        </View>)
-    }
-
-
-}
-
-
-class GameState extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      chosenDate: new Date(),
-      turn: undefined
-
-     };
-
-    this.sendMessage = this.sendMessage.bind(this)
-    this.sendGameState2 = this.sendGameState2.bind(this)
-    this.sendGameState1 = this.sendGameState1.bind(this)
-    this.getAlarms = this.getAlarms.bind(this)
-    this.getUser = this.getUser.bind(this)
   }
 
-
-
-  componentWillMount(){
-    this.getUser().then((data)=> {
-      this.setState({
-        user: data
-      })
-    })
+  async saveAlarm(alarmObj){
+    console.log('alarmObj', alarmObj)
+    let alarms = await this.getAlarms()
+    if(alarms === undefined){
+      alarms = {}
+      alarms[alarmObj['date']] = alarmObj['id']
+    } else {
+      alarms[alarmObj['date']] = alarmObj['id']
+    }
+    try {
+      await AsyncStorage.setItem('@MyStore:alarms', JSON.stringify(alarms));
+    } catch (error) {
+      console.log(alarmObj, 'not saved', error)
+    }
   }
 
-
-      async getUser(){
-        try {
-          const value = await AsyncStorage.getItem('@MyStore:user');
-          if (value !== null){
-            console.log('value', value)
-            return value
-          }
-          return 'no_user'
-        } catch (error) {
-          console.log(error)
-          return 'no_user'
-
-        }
+  async getUser(){
+    try {
+      const value = await AsyncStorage.getItem('@MyStore:user');
+      if (value !== null){
+        console.log('value', value)
+        return value
       }
+      return 'no_user'
+    } catch (error) {
+      console.log(error)
+      return 'no_user'
 
-
+    }
+  }
 
   async sendGameState1(num){
     console.log('gamestate1 firing', this.state)
@@ -290,14 +217,20 @@ class GameState extends React.Component {
     ws.send(JSON.stringify(obj))
   }
 
-
-
   render() {
 
+    let connectionStatus = (<Text></Text>)
+
+    if(this.state.connection === false){
+      connectionStatus = (
+        <View>
+          <Text>disconnected from server
+          <Button title='reconnect' onPress={this.connect} /></Text>
+        </View>
+      )
+    }
+
     let turn = (<View></View>)
-
-
-
 
     let tileFunc = ()=>{}
     let tiles = (<Text>No Active Games</Text>)
@@ -318,8 +251,7 @@ class GameState extends React.Component {
 
       let hit = this.state.gameState[Object.keys(this.state.gameState)[0]]['state']
       let solutionHit = this.state.gameState[Object.keys(this.state.gameState)[0]]['solution']
-      console.log('hit', hit)
-      console.log('solutions', solutionHit)
+
       for(let i = 0; i < 25; i++){
         //if tile has been clicked
         if(hit.indexOf(i) !== -1 && solutionHit.indexOf(i) !== -1){
@@ -335,59 +267,47 @@ class GameState extends React.Component {
           <View style={styles.hitTile}></View>
           </TouchableWithoutFeedback>)
         }
-
-        else {
-        tiles.push(<TouchableWithoutFeedback key={i} onPress={()=>{
-          console.log('tile hit', this.state)
-          tileFunc(i)}}>
-        <View style={styles.tile}></View>
-        </TouchableWithoutFeedback>)
+          else {
+          tiles.push(<TouchableWithoutFeedback key={i} onPress={()=>{
+            console.log('tile hit', this.state)
+            tileFunc(i)}}>
+              <View style={styles.tile}></View>
+          </TouchableWithoutFeedback>)
       }
     }
-
   }
 
-  let gameBoard =  (<View pointerEvents='auto' style={styles.tileContainer}>
-
-    {tiles}
-
-  </View>)
+  let gameBoard =  (
+    <View pointerEvents='auto' style={styles.tileContainer}>
+      {tiles}
+    </View>
+  )
 
     if(this.state.turn !== undefined){
 
-     gameBoard = (<View pointerEvents={this.state.turn === user ? 'auto' : 'none'}>
-
-     {tiles}
-</View>)
-}
-
-
-
-
-
-
+     gameBoard = (
+         <View pointerEvents={this.state.turn === user ? 'auto' : 'none'}>
+          {tiles}
+         </View>
+       )
+     }
 
     return (
       <View style={styles.container}>
-      <ConnectionStatus />
+        {connectionStatus}
         {turn}
         {gameBoard}
-
       </View>
     );
   }
 }
 
-
-
 class SetAlarm extends React.Component {
   constructor(props){
     super(props)
-
     this.state = {
       chosenDate: new Date()
     }
-
     this.setAlarm = this.setAlarm.bind(this)
     this.setDate = this.setDate.bind(this)
   }
@@ -400,29 +320,19 @@ class SetAlarm extends React.Component {
 
   setDate(newDate) {
     this.setState({chosenDate: newDate})
-
  }
-
-
 
   render(){
     return(
-
       <View style={styles.datePicker}>
-      <ConnectionStatus />
-
-      <DatePickerIOS
-        date={this.state.chosenDate}
-        onDateChange={this.setDate}
-      />
-      <Button title='set alarm' onPress={
-        this.setAlarm
-      } />
+        <DatePickerIOS
+          date={this.state.chosenDate}
+          onDateChange={this.setDate}  />
+        <Button title='set alarm' onPress={this.setAlarm} />
       </View>
     )
   }
 }
-
 
 class MyAlarm extends React.Component {
   constructor(props){
@@ -432,8 +342,8 @@ class MyAlarm extends React.Component {
       alarms: []
     }
     this.deleteAlarm = this.deleteAlarm.bind(this)
+    this.getAlarms = this.getAlarms.bind(this)
   }
-
 
   componentWillMount(){
     this.getAlarms()
@@ -447,58 +357,42 @@ class MyAlarm extends React.Component {
       }
     } catch (error) {
       console.log(error)
-
     }
   }
 
   async deleteAlarm(alarm){
-    console.log('delete firing')
-    ws.send(JSON.stringify({'fuck': 'shit'}))
     ws.send({'deleteAlarm': this.state.alarms[alarm]})
-    console.log('ws working')
     this.setState((prevState)=>{
       delete prevState.alarms[alarm]
       return {alarms: prevState.alarms}
     })
-    console.log('just before async shit')
     try {
-      console.log('firing');
       await AsyncStorage.setItem('@MyStore:alarms', JSON.stringify(this.state.alarms));
-      console.log('suxess')
     } catch (error) {
       console.log( error)
     }
-
   }
 
   render(){
     let alarms = Object.keys(this.state.alarms).map((alarm, i)=>{
       return (
         <View style={styles.alarm} key={i}>
-
           <Text >{alarm}</Text>
           <Button title='remove alarm' onPress={()=>{
             this.deleteAlarm(alarm)
-
           }} />
         </View>)
     })
 
     return(
       <View style={styles.container}>
-      <ConnectionStatus />
-
-      <ScrollView contentContainerStyle={styles.myAlarms}>
-
-        {alarms}
-      </ScrollView>
+        <ScrollView contentContainerStyle={styles.myAlarms}>
+          {alarms}
+        </ScrollView>
       </View>
     )
   }
 }
-
-
-
 
 export default createBottomTabNavigator({
   Home: GameState,

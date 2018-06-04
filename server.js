@@ -6,12 +6,16 @@ let app = express()
 let MongoClient = require('mongodb').MongoClient
 let assert = require('assert')
 let port = process.env.PORT || 5001
+let gameStateHelper = require('./gamestate.js')
+
+//are all users that need broadcasting to actually logged in?
 
 //configure http server
 app.use(express.static(__dirname + "/"))
 let server = http.createServer(app)
 server.listen(port)
 console.log("http server listening on", port)
+
 
 //connect to mongodb -- todo: handle lost connection
 var mdb
@@ -20,90 +24,6 @@ MongoClient.connect("mongodb://andrew:sevens7@ds235840.mlab.com:35840/heroku_rbf
     mdb = db.db('heroku_rbffwg9m')
     if (err) throw err;
 });
-
-function appendUniqueNumber(arr, max){
-  let originalLength = arr.length
-  while(originalLength === arr.length){
-    let num = Math.floor(Math.random() * max)
-    if(arr.indexOf(num) === -1)
-    {arr.push(num)}
-  }
-  return arr
-}
-
-function createSinglePlayerGameState(date, user){
-  let gameState = {}
-  gameState['type'] = 'single'
-  gameState['user'] = user
-
-  let threeRandos = []
-  while(threeRandos.length < 3){
-    threeRandos = appendUniqueNumber(threeRandos, 26)
-  }
-
-  gameState['solution'] = threeRandos
-  gameState['state'] = []
-
-  let obj = {}
-  obj[`${date}${user}`] = gameState
-
-  console.log('new single player game state created', obj)
-
-  return obj
-}
-
-function createTwoPlayerGameState(date, user1, user2){
-  let gameState = {}
-  gameState['type'] = 'multi'
-  gameState['users'] = []
-  gameState['users'].push(user1)
-  gameState['users'].push(user2)
-
-  let threeRandos = []
-  while(threeRandos.length < 3){
-    threeRandos = appendUniqueNumber(threeRandos, 26)
-  }
-
-  gameState['solution'] = threeRandos
-  gameState['state'] = []
-  gameState['turn'] = user1
-
-  let obj = {}
-  obj[`${date}${user1}${user2}`] = gameState
-
-  return obj
-}
-
-
-function checkForSolution(gameState){
-  console.log('solutionnnnnn', gameState)
-  let hits = 0
-  gameState['solution'].forEach((num)=>{
-    if(gameState['state'].indexOf(num) !== -1){
-      hits++
-    }
-  })
-  return hits === 3 ?  true :  false
-}
-
-function updateServerGameState(serverGameStates, gameState){
-  serverGameStates[Object.keys(gameState)[0]] = gameState[Object.keys(gameState)[0]]
-  return serverGameStates
-}
-
-function computerMove(gameState){
-  console.log('entering computer move', gameState)
-  console.log(gameState['state'])
-  gameState['state'] = appendUniqueNumber(gameState['state'], 26)
-  console.log('computer has moved', gameState
-  )
-  return gameState
-}
-
-
-
-
-
 
 
 
@@ -120,9 +40,9 @@ function scheduleSingleAlarm(date, user){
   alarmsObj[gameID] = schedule.scheduleJob(new Date(date), ()=>{
     console.log('singleplayermatch BEGUN')
 
-    //send signal to raspberry pi
+    //clients['pi'].send(JSON.stringify({'toggle': 'on'}))
 
-    const newGameState = createSinglePlayerGameState(date, user)
+    const newGameState = gameStateHelper.singlePlayer(date, user)
 
     //set active game
     onePlayerGames[gameID] = newGameState[gameID]
@@ -145,14 +65,9 @@ function scheduleSingleAlarm(date, user){
           clients[user].send(JSON.stringify({'gameState1': returnObj}))
         }
       })
-
     }
-
-
   })
-
   return gameID
-
 }
 
 function scheduleCollabAlarm(date, user1, user2){
@@ -169,12 +84,12 @@ function scheduleCollabAlarm(date, user1, user2){
     user: user2},
     {$set: {matched: gameID}})
 
-   alarmsObj[gameID]= schedule.scheduleJob(new Date(date), ()=>{
+  alarmsObj[gameID]= schedule.scheduleJob(new Date(date), ()=>{
 
-    //send signal to raspberry pi
-    //clients['pi'].send('on')
+    //client['pi'].send(JSON.stringify({'toggle': 'on'}))
 
-    const newGameState = createTwoPlayerGameState(date, user1, user2)
+
+    const newGameState = gameStateHelper.twoPlayer(date, user1, user2)
 
     //set active game
     twoPlayerGames[gameID] = newGameState[gameID]
@@ -185,28 +100,26 @@ function scheduleCollabAlarm(date, user1, user2){
         $sort: {score: 1}
       }}})
 
-      mdb.collection('users').update({user: user2},
-        {$push:{games: {
-          $each: [gameID],
-          $sort: {score: 1}
-        }}})
+    mdb.collection('users').update({user: user2},
+      {$push:{games: {
+        $each: [gameID],
+        $sort: {score: 1}
+      }}})
 
-      for(user1 in clients){
-        mdb.collection('users').find({user: user1}).toArray((err, userObj)=>{
-          if(userObj[0].games[0].indexOf(gameID) === -1){
-            clients[user1].send(JSON.stringify({'gameState2': returnObj}))
-          }
-        })
-      }
-      for(user2 in clients){
-        mdb.collection('users').find({user: user2}).toArray((err, userObj)=>{
-          if(userObj[0].games[0].indexOf(gameID) === -1){
-            clients[user2].send(JSON.stringify({'gameState2': returnObj}))
-          }
-        })
-      }
-
-
+    for(user1 in clients){
+      mdb.collection('users').find({user: user1}).toArray((err, userObj)=>{
+        if(userObj[0].games[0].indexOf(gameID) === -1){
+          clients[user1].send(JSON.stringify({'gameState2': returnObj}))
+        }
+      })
+    }
+    for(user2 in clients){
+      mdb.collection('users').find({user: user2}).toArray((err, userObj)=>{
+        if(userObj[0].games[0].indexOf(gameID) === -1){
+          clients[user2].send(JSON.stringify({'gameState2': returnObj}))
+        }
+      })
+    }
   })
   return gameID
 }
@@ -240,6 +153,11 @@ wss.on("connection", function(ws) {
 
     switch(messageType){
       case 'user':
+        if (message === 'pi'){
+          clients['pi'] = ws
+        }
+
+        let deebee = mdb
 
         if(message === 'no_user'){
           let uniqueID = `${new Date}${Math.random()*10000000}`
@@ -254,7 +172,7 @@ wss.on("connection", function(ws) {
           clients[user] = ws
           console.log('client added')
           //check database to see if user has an active game
-          mdb.collection('users').find({'user': message}).toArray((err, userObj)=>{
+          deebee.collection('users').find({'user': message}).toArray((err, userObj)=>{
               const currentGame = userObj[0].currentGame
               console.log('this is working', currentGame)
               if(onePlayerGames.hasOwnProperty(currentGame)){
@@ -358,8 +276,8 @@ wss.on("connection", function(ws) {
           clients[user].send({gameState2: newGameState})
         })
 
-        if (checkForSolution(newState)){
-          //turn off pi if there are no more active games
+        if (gameStateHelper.checkForSolution(newState)){
+          clients['pi'].send(JSON.stringify({'toggle': 'off'}))
 
           message[key].users.forEach((user)=>{
             clients[user].send({'gameOver': key})
@@ -367,10 +285,7 @@ wss.on("connection", function(ws) {
               {$pop:{games: -1}
               })
 
-          //sendMessage('gameOver', Object.keys(message)[0])
-          //delete from users active game
-          //mdb.collection('users').update({'user': user}, {$set{}})
-          //delete from onePlayerGames
+
           delete twoPlayerGames[key]
 
         })
@@ -381,7 +296,7 @@ wss.on("connection", function(ws) {
         //check for solutions here, too???
 
         //computer makes a move
-        let newSingleState = computerMove(message[Object.keys(message)[0]])
+        let newSingleState = gameStateHelper.computerMove(message[Object.keys(message)[0]])
 
         let returningState = {}
         returningState[Object.keys(message)[0]] = newSingleState
@@ -389,7 +304,10 @@ wss.on("connection", function(ws) {
 
         //check game state against solution!
         //if solution...
-        if (checkForSolution(newSingleState)){
+        if (gameStateHelper.checkForSolution(newSingleState)){
+
+          clients['pi'].send(JSON.stringify({'toggle': 'off'}))
+
           //turn off pi if there are no more active games
           sendMessage('gameOver', Object.keys(message)[0])
           //delete from users active game
@@ -409,40 +327,13 @@ wss.on("connection", function(ws) {
         }
 
         break;
-      case 'pi':
-        console.log(message)
-        //handle
-        checkAlarmState === 'on' ? ws.send('on') : ws.send('off')
-        break;
+
       default:
         break;
     }
 
-    //check id
-      //does user have stored id? if not generate, store, and send
-      //or if server cannot locate the id, generate new id, store, and send
-      //or it it is valid, check the instructions
-
-
-    //if alarm message...
-      //const alarm = 0
-      //find another user with alarm - if none exists, store the alarm and wait
-      //if you find another user with the same alarm, schedule new alarm
-      //let newAlarm = scheduleAlarm(alarm, user)
-      //save newAlarm to db AND send back to user, like so...
-      //save
-      //ws.send(newAlarm)
-
-    //if alarm cancel...
-      //set alarm id to variable
-      //cancel alarm
-
   })
 
-
-  // ws.send('you got it bitch')
-
-  console.log("websocket connection open")
 
   ws.on('close', function close(){
     console.log('connection closing')
