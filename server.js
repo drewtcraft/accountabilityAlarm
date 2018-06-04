@@ -127,6 +127,12 @@ function scheduleSingleAlarm(date, user){
     //set active game
     onePlayerGames[gameID] = newGameState[gameID]
 
+    mdb.collection('users').update({user: user},
+      {$push:{games: {
+        $each: [gameID],
+        $sort: {score: 1}
+      }}})
+
     //do I need to update the server's user games?
     //mdb.users.update({user: user1}, {'$push':{games: gameID}})
     console.log('single player alarm going off')
@@ -134,13 +140,14 @@ function scheduleSingleAlarm(date, user){
       console.log('sending message via scheduled alarm')
       let returnObj = {}
       returnObj[`${gameID}`] = onePlayerGames[gameID]
-      clients[user].send(JSON.stringify({'gameState1': returnObj}))
-      mdb.collection('users').update({user: user}, {$set:{currentGame: gameID}})
+      mdb.collection('users').find({user: user}).toArray((err, userObj)=>{
+        if(userObj[0].games[0].indexOf(gameID) === -1){
+          clients[user].send(JSON.stringify({'gameState1': returnObj}))
+        }
+      })
+
     }
-    else {
-      console.log('user not connected, updating database')
-      mdb.collection('users').update({user: user}, {$set:{currentGame: gameID}})
-    }
+
 
   })
 
@@ -172,8 +179,33 @@ function scheduleCollabAlarm(date, user1, user2){
     //set active game
     twoPlayerGames[gameID] = newGameState[gameID]
 
-    // mdb.users.update({user: user1}, {'$push':{games: gameID}})
-    // mdb.users.update({user: user2}, {'$push':{games: gameID}})
+    mdb.collection('users').update({user: user1},
+      {$push:{games: {
+        $each: [gameID],
+        $sort: {score: 1}
+      }}})
+
+      mdb.collection('users').update({user: user2},
+        {$push:{games: {
+          $each: [gameID],
+          $sort: {score: 1}
+        }}})
+
+      for(user1 in clients){
+        mdb.collection('users').find({user: user1}).toArray((err, userObj)=>{
+          if(userObj[0].games[0].indexOf(gameID) === -1){
+            clients[user1].send(JSON.stringify({'gameState2': returnObj}))
+          }
+        })
+      }
+      for(user2 in clients){
+        mdb.collection('users').find({user: user2}).toArray((err, userObj)=>{
+          if(userObj[0].games[0].indexOf(gameID) === -1){
+            clients[user2].send(JSON.stringify({'gameState2': returnObj}))
+          }
+        })
+      }
+
 
   })
   return gameID
@@ -220,25 +252,41 @@ wss.on("connection", function(ws) {
           console.log('alleged user', message)
           user = message
           clients[user] = ws
+          console.log('client added')
           //check database to see if user has an active game
           mdb.collection('users').find({'user': message}).toArray((err, userObj)=>{
               const currentGame = userObj[0].currentGame
+              console.log('this is working', currentGame)
               if(onePlayerGames.hasOwnProperty(currentGame)){
-                sendMessage('gameState1', onePlayerGames[currentGame])
+                console.log(onePlayerGames[currentGame])
+                let rObj = {}
+                rObj[currentGame] = onePlayerGames[currentGame]
+                sendMessage('gameState1', rObj)
               } else if (twoPlayerGames.hasOwnProperty(currentGame)){
-                sendMessage('gameState2', twoPlayerGames[currentGame])
+                let rObj = {}
+                rObj[currentGame] = onePlayerGames[currentGame]
+                sendMessage('gameState2', rObj)
               }
           })
         }
         break;
 
       case 'setAlarm':
-        console.log('setting alarm', message)
+        let converted = new Date(message)
+        //zero out seconds of incoming date
+        let incomingAlarm = JSON.stringify(new Date(
+          converted.getFullYear(),
+          converted.getMonth(),
+          converted.getDate(),
+          converted.getHours(),
+          converted.getMinutes(),
+          0, 0))
+        console.log('setting alarm', incomingAlarm)
         console.log('looking for match')
         //try to find a collaborator first...
         //check db for a matching alarm
         mdb.collection('alarms').find({
-          'date': message,
+          'date': incomingAlarm,
           'matched': false
         }).toArray((err, alarmArr) =>{
           if(alarmArr[0]){
@@ -247,7 +295,7 @@ wss.on("connection", function(ws) {
             //and if it is, respond that the user has already set this alarm
             mdb.collection('alarms').find({
               'user': user,
-              'date': message,
+              'date': incomingAlarm,
               'matched': false
             }).toArray((err, result)=>{
               if (result[0]){
@@ -257,10 +305,10 @@ wss.on("connection", function(ws) {
                 console.log('scheduling collaborative game')
                 //set alarm id in database for both users
                 console.log(`users are ${user} and ${alarmArr[0].user}`)
-                let alarmID = scheduleCollabAlarm(message, user, alarmArr[0].user)
+                let alarmID = scheduleCollabAlarm(incomingAlarm, user, alarmArr[0].user)
                 let alarmObj = {}
                 alarmObj['id'] = alarmID
-                alarmObj['date'] = message
+                alarmObj['date'] = incomingAlarm
                 ws.send(JSON.stringify({'alarmConfirm': alarmObj}))
 
               }
@@ -271,16 +319,16 @@ wss.on("connection", function(ws) {
             console.log('no match found, inserting...')
             mdb.collection('alarms').insert({
               user: user,
-              date: message,
+              date: incomingAlarm,
               matched: false
             }, (err, result)=> {
               console.log('inserted, expecting null', err)
             })
             console.log('scheduling single player game')
-            let alarmID = scheduleSingleAlarm(message, user)
+            let alarmID = scheduleSingleAlarm(incomingAlarm, user)
             let alarmObj = {}
             alarmObj['id'] = alarmID
-            alarmObj['date'] = message
+            alarmObj['date'] = incomingAlarm
             ws.send(JSON.stringify({'alarmConfirm': alarmObj}))
 
           }
@@ -315,32 +363,40 @@ wss.on("connection", function(ws) {
 
           message[key].users.forEach((user)=>{
             clients[user].send({'gameOver': key})
-          })
-          sendMessage('gameOver', Object.keys(message)[0])
+            mdb.collection('users').update({user: user},
+              {$pop:{games: -1}
+              })
+
+          //sendMessage('gameOver', Object.keys(message)[0])
           //delete from users active game
           //mdb.collection('users').update({'user': user}, {$set{}})
           //delete from onePlayerGames
           delete twoPlayerGames[key]
 
-        }
+        })
+      }
 
         break;
       case 'gameState1':
         //check for solutions here, too???
 
         //computer makes a move
-        let newState = computerMove(message[Object.keys(message)[0]])
+        let newSingleState = computerMove(message[Object.keys(message)[0]])
 
         let returningState = {}
-        returningState[Object.keys(message)[0]] = newState
+        returningState[Object.keys(message)[0]] = newSingleState
         sendMessage('gameState1', returningState)
 
         //check game state against solution!
         //if solution...
-        if (checkForSolution(newState)){
+        if (checkForSolution(newSingleState)){
           //turn off pi if there are no more active games
           sendMessage('gameOver', Object.keys(message)[0])
           //delete from users active game
+          mdb.collection('users').update({user: user},
+            {$pop:{games: -1}
+            })
+
           //mdb.collection('users').update({'user': user}, {$set{}})
           //delete from onePlayerGames
           delete onePlayerGames[Object.keys(message)[0]]
@@ -348,7 +404,7 @@ wss.on("connection", function(ws) {
         //if no solution
         else {
           //update server's game state
-          onePlayerGames[Object.keys(message)[0]] = newState
+          onePlayerGames[Object.keys(message)[0]] = newSingleState
 
         }
 
