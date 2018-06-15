@@ -6,9 +6,9 @@ An alarm app with a twist. Users are paired based on what time they set an alarm
 ### Technologies Used
 * Node
 * Express
--Websockets (npm package: ws)
--React Native
--React Navigation
--MongoDB
--Raspberry Pi 3
+* Websockets (npm package: ws)
+* React Native
+* React Navigation
+* MongoDB
+* Raspberry Pi 3
 
